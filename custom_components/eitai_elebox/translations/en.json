@@ -1,0 +1,90 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "confirm": {
+        "description": "Found ELEBOX-HV battery `{device_id}` with {modules} modules via MQTT. Add it?"
+      },
+      "user": {
+        "description": "Device ID of the eitai-elebox bridge (MQTT topic eitai_elebox/<id>/…).",
+        "data": {
+          "device_id": "Device ID"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Already configured",
+      "invalid_discovery_info": "Invalid discovery data"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "pack_voltage": {
+        "name": "Pack voltage"
+      },
+      "cell_min": {
+        "name": "Lowest cell voltage"
+      },
+      "cell_max": {
+        "name": "Highest cell voltage"
+      },
+      "cell_avg": {
+        "name": "Average cell voltage"
+      },
+      "cell_delta": {
+        "name": "Cell voltage spread"
+      },
+      "cell_min_location": {
+        "name": "Lowest cell"
+      },
+      "cell_max_location": {
+        "name": "Highest cell"
+      },
+      "temp_min": {
+        "name": "Lowest temperature"
+      },
+      "temp_max": {
+        "name": "Highest temperature"
+      },
+      "reference_cell": {
+        "name": "Master reference cell voltage"
+      },
+      "module_count": {
+        "name": "Modules"
+      },
+      "system_record": {
+        "name": "System record {record} (raw)"
+      },
+      "module_voltage": {
+        "name": "Module voltage"
+      },
+      "deviation_from_pack_avg": {
+        "name": "Deviation from pack average"
+      },
+      "min_cell_below_pack_avg": {
+        "name": "Lowest cell below pack average"
+      },
+      "cell_min_index": {
+        "name": "Lowest cell number"
+      },
+      "status_raw": {
+        "name": "Status (raw)"
+      },
+      "balance_state_raw": {
+        "name": "Balancing state (raw)"
+      },
+      "summary_byte2": {
+        "name": "Summary byte 2 (raw)"
+      },
+      "firmware": {
+        "name": "Firmware"
+      },
+      "cell_voltage": {
+        "name": "Cell {cell}"
+      },
+      "temp_sensor": {
+        "name": "Temperature {sensor}"
+      }
+    }
+  }
+}

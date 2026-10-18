@@ -1,0 +1,15 @@
+services:
+  eitai-elebox-bridge:
+    build:
+      context: .
+      dockerfile: bridge/Dockerfile
+    image: eitai-elebox-bridge:latest
+    restart: unless-stopped
+    env_file: .env
+    # ZLG USB adapter: pass the USB bus and mount the vendor library (not distributed with this project)
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+    volumes:
+      - ./zlg/libusbcan.so:/opt/zlg/libusbcan.so:ro
+    # SocketCAN instead: remove devices/volumes above and use the host network
+    # network_mode: host

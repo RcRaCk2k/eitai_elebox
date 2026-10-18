@@ -1,0 +1,90 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "confirm": {
+        "description": "ELEBOX-HV-Batterie `{device_id}` mit {modules} Modulen über MQTT gefunden. Hinzufügen?"
+      },
+      "user": {
+        "description": "Geräte-ID der eitai-elebox-Brücke (MQTT-Thema eitai_elebox/<id>/…).",
+        "data": {
+          "device_id": "Geräte-ID"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Bereits eingerichtet",
+      "invalid_discovery_info": "Ungültige Discovery-Daten"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "pack_voltage": {
+        "name": "Gesamtspannung"
+      },
+      "cell_min": {
+        "name": "Niedrigste Zellspannung"
+      },
+      "cell_max": {
+        "name": "Höchste Zellspannung"
+      },
+      "cell_avg": {
+        "name": "Mittlere Zellspannung"
+      },
+      "cell_delta": {
+        "name": "Zellspannungs-Spreizung"
+      },
+      "cell_min_location": {
+        "name": "Niedrigste Zelle"
+      },
+      "cell_max_location": {
+        "name": "Höchste Zelle"
+      },
+      "temp_min": {
+        "name": "Niedrigste Temperatur"
+      },
+      "temp_max": {
+        "name": "Höchste Temperatur"
+      },
+      "reference_cell": {
+        "name": "Master-Referenzspannung"
+      },
+      "module_count": {
+        "name": "Module"
+      },
+      "system_record": {
+        "name": "Systemdatensatz {record} (roh)"
+      },
+      "module_voltage": {
+        "name": "Modulspannung"
+      },
+      "deviation_from_pack_avg": {
+        "name": "Abweichung vom Pack-Mittel"
+      },
+      "min_cell_below_pack_avg": {
+        "name": "Niedrigste Zelle unter Pack-Mittel"
+      },
+      "cell_min_index": {
+        "name": "Nummer der niedrigsten Zelle"
+      },
+      "status_raw": {
+        "name": "Status (roh)"
+      },
+      "balance_state_raw": {
+        "name": "Balancing-Status (roh)"
+      },
+      "summary_byte2": {
+        "name": "Summary-Byte 2 (roh)"
+      },
+      "firmware": {
+        "name": "Firmware"
+      },
+      "cell_voltage": {
+        "name": "Zelle {cell}"
+      },
+      "temp_sensor": {
+        "name": "Temperatur {sensor}"
+      }
+    }
+  }
+}
