@@ -41,14 +41,18 @@ Required: `schema`, `module_count`. Optional: everything else (defaults 16 cells
   "system": {
     "module_count": 10,
     "cell_count": 160,
+    "soc_pct": 28,
     "pack_voltage_v": 529.46,
     "cell_min_mv": 3270, "cell_min_module": 6, "cell_min_cell": 7,
     "cell_max_mv": 3312, "cell_max_module": 1, "cell_max_cell": 16,
     "cell_avg_mv": 3309.2,
     "cell_delta_mv": 42,
+    "cell_min_below_avg_mv": 39.2,
     "temp_min_c": 28, "temp_max_c": 33,
     "reference_cell_mv": 3309,
-    "system_records_raw": {"07": "050003fdce1c", "...": "..."}
+    "system_records_raw": {"07": "050003fdce1c", "...": "..."},
+    "counter_08_raw": 76470,
+    "counter_0a_raw": 369140
   },
   "modules": [
     {
@@ -66,6 +70,8 @@ Required: `schema`, `module_count`. Optional: everything else (defaults 16 cells
       "version": "118109 128909 139101",
       "status_raw": "0001000000000000",
       "balance_state_raw": "0000000000000000",
+      "balance_cmd_raw": "0100000000000000",
+      "balancing": false,
       "summary_byte2": 240
     }
   ],
@@ -79,6 +85,9 @@ Required: `schema`, `module_count`. Optional: everything else (defaults 16 cells
   A minimal publisher only needs `modules[].module`, `modules[].cells_mv` and `modules[].temps_c`;
   the derived values (min/max/avg/deviation) can be computed by the publisher or left out.
 * Units: voltages of cells in mV (integer), module/pack voltages in V, temperatures in °C.
+* `soc_pct` is the state of charge the BMS reports (last byte of system record `07`).
+* `balancing` is `true` when the module reports a non-zero balancing state (PF `0x41`). Only the all-zero
+  state has been observed so far, so the meaning of individual bits is not known yet.
 * Fields ending in `_raw` are undecoded bus data and may change meaning in later schema versions.
 
 ## Versioning

@@ -84,6 +84,23 @@
       },
       "temp_sensor": {
         "name": "Temperature {sensor}"
+      },
+      "soc": {
+        "name": "State of charge"
+      },
+      "cell_min_below_avg": {
+        "name": "Lowest cell below average"
+      },
+      "counter": {
+        "name": "Counter {record} (raw)"
+      },
+      "balance_cmd_raw": {
+        "name": "Balancing command (raw)"
+      }
+    },
+    "binary_sensor": {
+      "balancing": {
+        "name": "Balancing"
       }
     }
   }

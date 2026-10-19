@@ -43,6 +43,27 @@ class TestFrames(unittest.TestCase):
         self.assertEqual(s.reference_cell_mv, 3309)
         self.assertEqual(s.modules, {})
 
+    def test_soc_and_counters(self):
+        s = BatteryState()
+        s.update(Frame(0x1833F4E8, bytes.fromhex("07050003FDCE1C")))
+        s.update(Frame(0x1833F4E8, bytes.fromhex("080500012AC0")))
+        s.update(Frame(0x1833F4E8, bytes.fromhex("0A050005A21C")))
+        sysd = s.as_dict()["system"]
+        self.assertEqual(sysd["soc_pct"], 28)
+        self.assertEqual(sysd["counter_08_raw"], 0x012AC0)
+        self.assertEqual(sysd["counter_0a_raw"], 0x05A21C)
+
+    def test_balancing(self):
+        s = BatteryState()
+        s.update(Frame(0x1841F585, bytes.fromhex("0000000000000000")))
+        s.update(Frame(0x184085F5, bytes.fromhex("0100000000000000")))
+        m = s.modules[5].as_dict()
+        self.assertIs(m["balancing"], False)
+        self.assertEqual(m["balance_cmd_raw"], "0100000000000000")
+        s.update(Frame(0x1841F585, bytes.fromhex("0040000000000000")))
+        self.assertIs(s.modules[5].as_dict()["balancing"], True)
+        self.assertIsNone(s.modules.get(0))
+
     def test_standard_frames_ignored(self):
         s = BatteryState()
         s.update(Frame(0x305, b"\x00" * 8, extended=False))
@@ -64,6 +85,13 @@ class TestCapture(unittest.TestCase):
         sysd = self.d["system"]
         self.assertEqual((sysd["cell_min_module"], sysd["cell_min_cell"]), (6, 7))
         self.assertLess(sysd["cell_min_mv"], 3280)
+        self.assertGreater(sysd["cell_min_below_avg_mv"], 30)
+
+    def test_soc_from_capture(self):
+        self.assertEqual(self.d["system"]["soc_pct"], 28)
+
+    def test_no_module_balancing_in_capture(self):
+        self.assertEqual([m["balancing"] for m in self.d["modules"]], [False] * 10)
 
     def test_module_voltage_matches_cell_sum(self):
         for m in self.d["modules"]:

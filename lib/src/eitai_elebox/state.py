@@ -16,6 +16,7 @@ class ModuleState:
     status_raw: str | None = None
     summary_byte2: int | None = None
     balance_state_raw: str | None = None
+    balance_cmd_raw: str | None = None
     version_records: dict[int, str] = field(default_factory=dict)
     last_seen: float = 0.0
 
@@ -40,6 +41,9 @@ class ModuleState:
             "status_raw": self.status_raw,
             "summary_byte2": self.summary_byte2,
             "balance_state_raw": self.balance_state_raw,
+            "balance_cmd_raw": self.balance_cmd_raw,
+            # PF 0x41 was all zero in every capture so far; non-zero is assumed to mean "balancing"
+            "balancing": any(bytes.fromhex(self.balance_state_raw)) if self.balance_state_raw else None,
             "version": " ".join(self.version_records[k] for k in sorted(self.version_records)) or None,
             "last_seen": self.last_seen,
         }
@@ -76,6 +80,10 @@ class BatteryState:
         if f.src == p.MASTER_ADDR:
             if f.pf == p.PF_MASTER_TO_SLAVE_REF and len(d) >= 4:
                 self.reference_cell_mv = int.from_bytes(d[2:4], "big")
+            elif f.pf == p.PF_MASTER_BALANCE_CMD:
+                idx = p.module_index(f.dest)
+                if idx is not None:
+                    self._module(idx).balance_cmd_raw = d.hex()
             return
 
         # slave -> master
@@ -104,6 +112,17 @@ class BatteryState:
         elif f.pf == p.PF_SLAVE_VERSION and len(d) >= 4:
             m.version_records[d[1]] = d[1:4].hex()
 
+    def _decoded_records(self) -> dict:
+        out: dict = {}
+        rec = self.system_records
+        if len(rec.get(p.REC_STATUS, "")) >= 12:
+            out["soc_pct"] = bytes.fromhex(rec[p.REC_STATUS])[5]
+        # monotonic counters, meaning unknown: they step during discharge, record 0x0C holds the same since BMS start
+        for k in p.REC_COUNTERS:
+            if len(rec.get(k, "")) >= 10:
+                out[f"counter_{k:02x}_raw"] = int.from_bytes(bytes.fromhex(rec[k])[2:5], "big")
+        return out
+
     def as_dict(self) -> dict:
         mods = [self.modules[k].as_dict() for k in sorted(self.modules)]
         cells = [(m["module"], i + 1, v) for m in mods for i, v in enumerate(m["cells_mv"]) if v is not None]
@@ -116,6 +135,7 @@ class BatteryState:
             "temp_min_c": min(temps) if temps else None,
             "temp_max_c": max(temps) if temps else None,
             "system_records_raw": {f"{k:02x}": v for k, v in sorted(self.system_records.items())},
+            **self._decoded_records(),
         }
         if cells:
             lo = min(cells, key=lambda c: c[2])
@@ -125,6 +145,7 @@ class BatteryState:
                 cell_min_mv=lo[2], cell_min_module=lo[0], cell_min_cell=lo[1],
                 cell_max_mv=hi[2], cell_max_module=hi[0], cell_max_cell=hi[1],
                 cell_avg_mv=round(avg, 1), cell_delta_mv=hi[2] - lo[2],
+                cell_min_below_avg_mv=round(avg - lo[2], 1),
             )
             for m in mods:
                 m["deviation_from_pack_avg_mv"] = (

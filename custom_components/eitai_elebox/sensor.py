@@ -11,15 +11,12 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import EntityCategory, UnitOfElectricPotential, UnitOfTemperature
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfElectricPotential, UnitOfTemperature
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import EleboxConfigEntry, EleboxData
-from .const import DOMAIN, MANUFACTURER, MODEL, SIGNAL_AVAILABILITY, SIGNAL_INFO, SIGNAL_STATE
+from . import EleboxConfigEntry
+from .entity import EleboxEntity, setup_platform
 
 MV = UnitOfElectricPotential.MILLIVOLT
 V = UnitOfElectricPotential.VOLT
@@ -59,11 +56,15 @@ def _raw(key: str, field: str) -> EleboxSensorDescription:
 
 
 SYSTEM_SENSORS: tuple[EleboxSensorDescription, ...] = (
+    EleboxSensorDescription(key="soc", translation_key="soc", device_class=SensorDeviceClass.BATTERY,
+                            state_class=SensorStateClass.MEASUREMENT, native_unit_of_measurement=PERCENTAGE,
+                            value_fn=lambda d: d.get("soc_pct")),
     _voltage("pack_voltage", V, "pack_voltage_v", 1),
     _voltage("cell_min", MV, "cell_min_mv"),
     _voltage("cell_max", MV, "cell_max_mv"),
     _voltage("cell_avg", MV, "cell_avg_mv", 1),
     _voltage("cell_delta", MV, "cell_delta_mv"),
+    _voltage("cell_min_below_avg", MV, "cell_min_below_avg_mv", 1),
     EleboxSensorDescription(key="cell_min_location", translation_key="cell_min_location",
                             value_fn=_location("cell_min")),
     EleboxSensorDescription(key="cell_max_location", translation_key="cell_max_location",
@@ -80,6 +81,13 @@ SYSTEM_SENSORS: tuple[EleboxSensorDescription, ...] = (
             value_fn=lambda d, r=rec: d.get("system_records_raw", {}).get(r))
         for rec in ("07", "08", "09", "0a", "0b", "0c")
     ),
+    *(
+        EleboxSensorDescription(
+            key=f"counter_{rec}", translation_key="counter", translation_placeholders={"record": rec},
+            entity_category=EntityCategory.DIAGNOSTIC, entity_registry_enabled_default=False,
+            value_fn=lambda d, r=rec: d.get(f"counter_{r}_raw"))
+        for rec in ("08", "0a")
+    ),
 )
 
 MODULE_SENSORS: tuple[EleboxSensorDescription, ...] = (
@@ -95,6 +103,7 @@ MODULE_SENSORS: tuple[EleboxSensorDescription, ...] = (
     _temp("temp_max", "temp_max_c"),
     _raw("status_raw", "status_raw"),
     _raw("balance_state_raw", "balance_state_raw"),
+    _raw("balance_cmd_raw", "balance_cmd_raw"),
     _raw("summary_byte2", "summary_byte2"),
     EleboxSensorDescription(key="firmware", translation_key="firmware", entity_category=EntityCategory.DIAGNOSTIC,
                             value_fn=lambda d: d.get("version")),
@@ -124,94 +133,21 @@ def _temp_sensors(count: int) -> list[EleboxSensorDescription]:
 
 async def async_setup_entry(hass: HomeAssistant, entry: EleboxConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     data = entry.runtime_data
-    added_modules: set[int] = set()
-    system_added = False
 
-    @callback
-    def on_info() -> None:
-        nonlocal system_added
-        info = data.info or {}
-        # register the system device first so modules can reference it by registry id
-        system_device = dr.async_get(hass).async_get_or_create(
-            config_entry_id=entry.entry_id, **_system_device_info(data.device_id, info))
-        new: list[EleboxSensor] = []
-        if not system_added:
-            new += [EleboxSensor(data, info, d, None, system_device.id) for d in SYSTEM_SENSORS]
-            system_added = True
-        cells = info.get("cells_per_module", 16)
-        temps = info.get("temps_per_module", 4)
-        for mod in range(1, info.get("module_count", 0) + 1):
-            if mod in added_modules:
-                continue
-            added_modules.add(mod)
-            for d in (*MODULE_SENSORS, *_cell_sensors(cells), *_temp_sensors(temps)):
-                new.append(EleboxSensor(data, info, d, mod, system_device.id))
-        if new:
-            async_add_entities(new)
-
-    entry.async_on_unload(async_dispatcher_connect(hass, SIGNAL_INFO.format(data.device_id), on_info))
-    if data.info:
-        on_info()
-
-
-def _system_device_info(device_id: str, info: dict[str, Any]) -> DeviceInfo:
-    return DeviceInfo(identifiers={(DOMAIN, device_id)}, manufacturer=MANUFACTURER, model=MODEL,
-                      name=f"{MODEL} {device_id}", sw_version=info.get("bridge_version"))
-
-
-class EleboxSensor(SensorEntity):
-    _attr_has_entity_name = True
-    _attr_should_poll = False
-    entity_description: EleboxSensorDescription
-
-    def __init__(self, data: EleboxData, info: dict[str, Any], description: EleboxSensorDescription,
-                 module: int | None, system_device_id: str) -> None:
-        self.entity_description = description
-        self._data = data
-        self._module = module
-        dev = data.device_id
+    def build(info: dict[str, Any], module: int | None, system_device_id: str) -> list[EleboxSensor]:
         if module is None:
-            self._attr_unique_id = f"{dev}_{description.key}"
-            self._attr_device_info = _system_device_info(dev, info)
+            descriptions = SYSTEM_SENSORS
         else:
-            versions = info.get("module_versions") or []
-            self._attr_unique_id = f"{dev}_m{module}_{description.key}"
-            self._attr_device_info = DeviceInfo(
-                identifiers={(DOMAIN, f"{dev}_m{module}")}, manufacturer=MANUFACTURER, model=f"{MODEL} module",
-                name=f"{MODEL} {dev} Module {module}", via_device_id=system_device_id,
-                sw_version=versions[module - 1] if module <= len(versions) else None)
+            descriptions = (*MODULE_SENSORS, *_cell_sensors(info.get("cells_per_module", 16)),
+                            *_temp_sensors(info.get("temps_per_module", 4)))
+        return [EleboxSensor(data, info, d, module, system_device_id) for d in descriptions]
 
-    def _source(self) -> dict[str, Any] | None:
-        state = self._data.state
-        if not state:
-            return None
-        if self._module is None:
-            return state.get("system")
-        for m in state.get("modules", []):
-            if m.get("module") == self._module:
-                return m
-        return None
+    setup_platform(hass, entry, async_add_entities, build)
 
-    @property
-    def available(self) -> bool:
-        return self._data.available and self._source() is not None
+
+class EleboxSensor(EleboxEntity, SensorEntity):
+    entity_description: EleboxSensorDescription
 
     @property
     def native_value(self) -> Any:
-        src = self._source()
-        return self.entity_description.value_fn(src) if src is not None else None
-
-    @callback
-    def _handle_update(self) -> None:
-        # ~230 entities get a snapshot every few seconds: only write real changes to keep the recorder small
-        current = (self.available, self.native_value)
-        if current != self._last_written:
-            self._last_written = current
-            self.async_write_ha_state()
-
-    async def async_added_to_hass(self) -> None:
-        self._last_written: tuple[bool, Any] | None = None
-        for signal in (SIGNAL_STATE, SIGNAL_AVAILABILITY):
-            self.async_on_remove(async_dispatcher_connect(
-                self.hass, signal.format(self._data.device_id), self._handle_update))
-        self._handle_update()
+        return self._value()

@@ -33,6 +33,10 @@ PF_SYSTEM_FORWARD = 0x3D        # 0xE8 -> 0xF4: forwards slave version records (
 PF_MASTER_BALANCE_CMD = 0x40    # master -> slave
 PF_SLAVE_BALANCE_STATE = 0x41   # slave -> master, all zero while not balancing
 
+# PF_SYSTEM_RECORD (0xE8 -> 0xF4), byte 0 = record index, bytes 1-2 = 05 00 in all records
+REC_STATUS = 0x07               # byte 6 = state of charge in % (matches the SOC reported to the inverter)
+REC_COUNTERS = (0x08, 0x0A)     # bytes 3-5 = 24-bit counters stepping during discharge, meaning unknown
+
 
 @dataclass(frozen=True, slots=True)
 class Frame:

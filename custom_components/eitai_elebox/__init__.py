@@ -16,7 +16,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from .const import CONF_DEVICE_ID, SIGNAL_AVAILABILITY, SIGNAL_INFO, SIGNAL_STATE, SUPPORTED_SCHEMA, TOPIC_ROOT
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
 
 @dataclass

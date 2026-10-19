@@ -59,9 +59,11 @@ and restart Home Assistant. Requires the MQTT integration. The battery appears u
 | `1812F5xx` | slave → master | 790 ms | bytes 2–5 = 4 temperatures, raw − 40 = °C | very likely |
 | `1819F5xx` | slave → master | 790 ms | bytes 4–5 = module voltage, 0.1 V (matches cell sum) | confirmed |
 | `1810xxF5` | master → slave | 790 ms | bytes 2–3 = reference cell voltage, mV (equals pack average) | likely |
-| `1815F5xx`, `1841F5xx`, `1840xxF5` | | 790 ms | status / balancing, raw | unknown |
+| `1815F5xx` | slave → master | 790 ms | module status, always `0001000000000000` so far | raw |
+| `1840xxF5` | master → slave | 790 ms | balancing command, always `0100000000000000` so far | raw |
+| `1841F5xx` | slave → master | 790 ms | balancing state, all zero (no balancing) in every capture so far | `balancing` = non-zero |
 | `1816F5xx`, `183DF4E8` | | 260 ms | module version records (forwarded by `0xE8`) | likely |
-| `1833F4E8` | `0xE8` → `0xF4` | 160 ms | indexed system records `07`…`0C` (current, SOC, limits?) | not decoded yet |
+| `1833F4E8` | `0xE8` → `0xF4` | 160 ms | indexed system records `07`…`0C`: `07` byte 6 = SOC %; `08`, `0A` bytes 3–5 = counters stepping during discharge; `0C` = the same counters since BMS start; `09`, `0B` constant | SOC decoded, rest raw |
 
 ## Development
 
