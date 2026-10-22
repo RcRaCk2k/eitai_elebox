@@ -20,7 +20,7 @@ TEMPS_PER_MODULE = 4
 TEMP_OFFSET = 40
 
 # PF (message type) values
-PF_MASTER_TO_SLAVE_REF = 0x10   # master -> slave, 8 bytes, bytes 2-3 = reference cell voltage (mV)
+PF_MASTER_TO_SLAVE_REF = 0x10   # master -> slave, 8 bytes, bytes 2-3 = reference cell voltage (mV); see docs/can-protocol.md
 PF_CELL_VOLTAGES = 0x11         # slave -> master, start cell + up to 3 cell voltages (mV, big endian)
 PF_TEMPERATURES = 0x12          # slave -> master, 4 temperatures (raw - 40 = degC)
 PF_SLAVE_ALARMS = 0x14          # slave -> master, empty in all captures so far
@@ -28,7 +28,7 @@ PF_SLAVE_STATUS = 0x15          # slave -> master, 8 bytes status, meaning unkno
 PF_SLAVE_VERSION = 0x16         # slave -> master, 3 rotating version/info records
 PF_MODULE_SUMMARY = 0x19        # slave -> master, bytes 4-5 = module voltage (0.1 V)
 PF_MASTER_POLL = 0x32           # master -> slave, keep-alive poll
-PF_SYSTEM_RECORD = 0x33         # 0xE8 -> 0xF4: indexed system records; slave -> master: empty poll reply
+PF_SYSTEM_RECORD = 0x33         # 0xE8 -> 0xF4: indexed system records; slave -> master: empty reply to PF_MASTER_POLL
 PF_SYSTEM_FORWARD = 0x3D        # 0xE8 -> 0xF4: forwards slave version records (byte 0 = module number)
 PF_MASTER_BALANCE_CMD = 0x40    # master -> slave
 PF_SLAVE_BALANCE_STATE = 0x41   # slave -> master, all zero while not balancing
@@ -36,6 +36,14 @@ PF_SLAVE_BALANCE_STATE = 0x41   # slave -> master, all zero while not balancing
 # PF_SYSTEM_RECORD (0xE8 -> 0xF4), byte 0 = record index, bytes 1-2 = 05 00 in all records
 REC_STATUS = 0x07               # byte 6 = state of charge in % (matches the SOC reported to the inverter)
 REC_COUNTERS = (0x08, 0x0A)     # bytes 3-5 = 24-bit counters stepping during discharge, meaning unknown
+# record 0x09 bytes 3-5 rise on days with charging and stay constant while only discharging; 0x0B and 0x0C vary too
+
+# every (PF, direction) combination seen on the bus; anything else shows up as unknown in the inventory
+SYSTEM_ADDR, SYSTEM_DEST = 0xE8, 0xF4
+KNOWN_SLAVE_PFS = {PF_CELL_VOLTAGES, PF_TEMPERATURES, PF_SLAVE_ALARMS, PF_SLAVE_STATUS, PF_SLAVE_VERSION,
+                   PF_MODULE_SUMMARY, PF_SYSTEM_RECORD, PF_SLAVE_BALANCE_STATE}
+KNOWN_MASTER_PFS = {PF_MASTER_TO_SLAVE_REF, PF_MASTER_POLL, PF_MASTER_BALANCE_CMD}
+KNOWN_SYSTEM_PFS = {PF_SYSTEM_RECORD, PF_SYSTEM_FORWARD}
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +64,20 @@ class Frame:
     @property
     def src(self) -> int:
         return self.can_id & 0xFF
+
+
+def is_known(can_id: int) -> bool:
+    """True if the ID matches a message type documented in docs/can-protocol.md."""
+    if can_id >> 24 != 0x18:
+        return False
+    pf, dest, src = (can_id >> 16) & 0xFF, (can_id >> 8) & 0xFF, can_id & 0xFF
+    if src == SYSTEM_ADDR and dest == SYSTEM_DEST:
+        return pf in KNOWN_SYSTEM_PFS
+    if src == MASTER_ADDR and module_index(dest) is not None:
+        return pf in KNOWN_MASTER_PFS
+    if dest == MASTER_ADDR and module_index(src) is not None:
+        return pf in KNOWN_SLAVE_PFS
+    return False
 
 
 def module_index(addr: int) -> int | None:

@@ -6,6 +6,7 @@ Payload format: docs/mqtt-format.md (any publisher, e.g. an ESP32, can implement
   /info          retained JSON: model, module/cell counts, versions. Triggers HA discovery.
   /state         JSON snapshot every INTERVAL seconds (see eitai_elebox.BatteryState.as_dict)
   /availability  "online" / "offline" (retained, also last will)
+  /inventory     retained JSON every INVENTORY_INTERVAL seconds: every CAN ID seen, for reverse engineering
 """
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ import paho.mqtt.client as mqtt
 from eitai_elebox import BatteryState, __version__ as LIB_VERSION
 from .sources import ReplaySource, SocketCanSource, ZlgSource
 
-BRIDGE_VERSION = "0.2.0"
+BRIDGE_VERSION = "0.3.0"
 TOPIC_ROOT = "eitai_elebox"
 SCHEMA_VERSION = 1  # see docs/mqtt-format.md
 STALE_AFTER = 30
@@ -52,12 +53,29 @@ def main() -> None:
     logging.basicConfig(level=env("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     device_id = env("DEVICE_ID", "elebox")
     interval = float(env("INTERVAL", "5"))
+    inventory_interval = float(env("INVENTORY_INTERVAL", "60"))
     base = f"{TOPIC_ROOT}/{device_id}"
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"eitai-elebox-bridge-{device_id}")
     if user := os.environ.get("MQTT_USER"):
         client.username_pw_set(user, os.environ.get("MQTT_PASSWORD"))
     client.will_set(f"{base}/availability", "offline", qos=1, retain=True)
+    # after a reconnect the broker has published the will ("offline"): the main loop re-announces everything
+    reconnected = False
+
+    def on_connect(_client, _userdata, _flags, reason_code, _props):
+        nonlocal reconnected
+        if reason_code.is_failure:
+            _LOG.warning("MQTT connect failed: %s", reason_code)
+            return
+        _LOG.info("MQTT connected")
+        reconnected = True
+
+    def on_disconnect(_client, _userdata, _flags, reason_code, _props):
+        _LOG.warning("MQTT disconnected: %s", reason_code)
+
+    client.on_connect = on_connect
+    client.on_disconnect = on_disconnect
     client.connect(env("MQTT_HOST", "localhost"), int(env("MQTT_PORT", "1883")))
     client.loop_start()
 
@@ -72,6 +90,8 @@ def main() -> None:
     state = BatteryState()
     started = time.time()
     next_publish = started + interval
+    next_inventory = started + inventory_interval
+    logged_unknown: set[str] = set()
     online = None
     published_info = None
 
@@ -84,6 +104,9 @@ def main() -> None:
         next_publish = now + interval
 
         is_online = now - state.last_frame < STALE_AFTER if state.last_frame else False
+        if reconnected:
+            reconnected = False
+            online = published_info = None
         if is_online != online:
             online = is_online
             client.publish(f"{base}/availability", "online" if online else "offline", qos=1, retain=True)
@@ -111,6 +134,15 @@ def main() -> None:
                 published_info = info
                 _LOG.info("announced %d modules", info["module_count"])
         client.publish(f"{base}/state", json.dumps(snap, separators=(",", ":")), qos=0, retain=True)
+        if now >= next_inventory:
+            next_inventory = now + inventory_interval
+            inv = state.inventory()
+            client.publish(f"{base}/inventory", json.dumps({"schema": SCHEMA_VERSION, "since": started, "ids": inv},
+                                                           separators=(",", ":")), qos=0, retain=True)
+            new_unknown = [i["id"] for i in inv if not i["known"] and i["id"] not in logged_unknown]
+            if new_unknown:
+                logged_unknown.update(new_unknown)
+                _LOG.info("new unknown CAN IDs: %s", " ".join(new_unknown))
 
 
 if __name__ == "__main__":

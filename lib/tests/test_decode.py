@@ -64,6 +64,15 @@ class TestFrames(unittest.TestCase):
         self.assertIs(s.modules[5].as_dict()["balancing"], True)
         self.assertIsNone(s.modules.get(0))
 
+    def test_inventory_flags_unknown_ids(self):
+        s = BatteryState()
+        s.update(Frame(0x1899F585, bytes.fromhex("01")))
+        s.update(Frame(0x1811F580, bytes.fromhex("01000cee0ceb0cee")))
+        inv = {i["id"]: i for i in s.inventory()}
+        self.assertFalse(inv["1899F585"]["known"])
+        self.assertTrue(inv["1811F580"]["known"])
+        self.assertEqual(inv["1899F585"]["last_data"], "01")
+
     def test_standard_frames_ignored(self):
         s = BatteryState()
         s.update(Frame(0x305, b"\x00" * 8, extended=False))
@@ -96,6 +105,14 @@ class TestCapture(unittest.TestCase):
     def test_module_voltage_matches_cell_sum(self):
         for m in self.d["modules"]:
             self.assertAlmostEqual(m["voltage_v"], sum(m["cells_mv"]) / 1000, delta=0.15)
+
+    def test_inventory_all_ids_known(self):
+        inv = load("capture_idle.log").inventory()
+        self.assertEqual(len(inv), 112)  # 11 message types x 10 modules + 2 system IDs
+        self.assertEqual([i["id"] for i in inv if not i["known"]], [])
+        bal = next(i for i in inv if i["id"] == "1841F585")
+        self.assertEqual(bal["payloads"], {"0000000000000000": bal["count"]})
+        self.assertAlmostEqual(bal["period_ms"], 790, delta=40)
 
     def test_system_records_present(self):
         self.assertEqual(sorted(self.d["system"]["system_records_raw"]), ["07", "08", "09", "0a", "0b", "0c"])

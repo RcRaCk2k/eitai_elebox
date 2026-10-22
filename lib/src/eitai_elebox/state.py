@@ -50,6 +50,33 @@ class ModuleState:
         return d
 
 
+MAX_VARIANTS = 32  # distinct payloads kept per CAN ID in the inventory
+
+
+@dataclass
+class IdStats:
+    """Everything seen for one CAN ID, decoded or not: the base for further reverse engineering."""
+    count: int = 0
+    first_seen: float = 0.0
+    last_seen: float = 0.0
+    last_data: str = ""
+    variants: dict[str, int] = field(default_factory=dict)
+    variants_overflow: bool = False
+
+    def add(self, data: str, ts: float) -> None:
+        if not self.count:
+            self.first_seen = ts
+        self.count += 1
+        self.last_seen = ts
+        self.last_data = data
+        if data in self.variants:
+            self.variants[data] += 1
+        elif len(self.variants) < MAX_VARIANTS:
+            self.variants[data] = 1
+        else:
+            self.variants_overflow = True
+
+
 @dataclass
 class BatteryState:
     modules: dict[int, ModuleState] = field(default_factory=dict)
@@ -57,6 +84,7 @@ class BatteryState:
     system_records: dict[int, str] = field(default_factory=dict)
     frames_total: int = 0
     last_frame: float = 0.0
+    ids: dict[int, IdStats] = field(default_factory=dict)
 
     def _module(self, idx: int) -> ModuleState:
         if idx not in self.modules:
@@ -69,6 +97,7 @@ class BatteryState:
         self.frames_total += 1
         self.last_frame = f.timestamp or time.time()
         d = f.data
+        self.ids.setdefault(f.can_id, IdStats()).add(d.hex(), self.last_frame)
 
         # system unit 0xE8 -> 0xF4
         if f.src == 0xE8 and f.dest == 0xF4:
@@ -121,6 +150,25 @@ class BatteryState:
         for k in p.REC_COUNTERS:
             if len(rec.get(k, "")) >= 10:
                 out[f"counter_{k:02x}_raw"] = int.from_bytes(bytes.fromhex(rec[k])[2:5], "big")
+        return out
+
+    def inventory(self) -> list[dict]:
+        """All CAN IDs seen so far with frame count, mean period and distinct payloads."""
+        out = []
+        for can_id in sorted(self.ids):
+            st = self.ids[can_id]
+            period = (st.last_seen - st.first_seen) / (st.count - 1) if st.count > 1 else None
+            out.append({
+                "id": f"{can_id:08X}",
+                "known": p.is_known(can_id),
+                "count": st.count,
+                "period_ms": round(period * 1000) if period is not None else None,
+                "last_data": st.last_data,
+                "variants": len(st.variants),
+                "variants_overflow": st.variants_overflow,
+                # the full list only for IDs with few payloads; cell voltages etc. change all the time
+                "payloads": st.variants if len(st.variants) <= 8 else None,
+            })
         return out
 
     def as_dict(self) -> dict:

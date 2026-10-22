@@ -11,6 +11,7 @@ All topics live under `eitai_elebox/<device_id>/`. `<device_id>` is a free ident
 | `…/info` | yes | 1 | after all modules reported, and whenever the topology changes |
 | `…/state` | yes | 0 | periodically, recommended every 5–10 s |
 | `…/availability` | yes | 1 | `online` / `offline`; set `offline` as MQTT last will |
+| `…/inventory` | yes | 0 | optional, e.g. every 60 s: every CAN ID seen (not used by the integration) |
 
 Home Assistant discovers a battery from its retained `info` message. Entities are created
 for `module_count` modules with `cells_per_module` cells and `temps_per_module` sensors each.
@@ -94,3 +95,22 @@ Required: `schema`, `module_count`. Optional: everything else (defaults 16 cells
 
 New optional fields may be added without changing `schema`. Removing or changing the meaning of a
 field increments `schema`; the integration warns when it sees a newer schema than it supports.
+
+## `inventory` (optional)
+
+For reverse engineering. The integration ignores it; the Docker bridge publishes it every `INVENTORY_INTERVAL`
+seconds (default 60). `known` is false for IDs not described in [can-protocol.md](can-protocol.md).
+`payloads` lists distinct payloads with their counts while there are at most 8, otherwise it is `null`;
+`variants` counts distinct payloads up to 32 (`variants_overflow` = more).
+
+```json
+{
+  "schema": 1,
+  "since": 1792332790.1,
+  "ids": [
+    {"id": "1841F585", "known": true, "count": 4510, "period_ms": 790, "last_data": "0000000000000000",
+     "variants": 1, "variants_overflow": false, "payloads": {"0000000000000000": 4510}}
+  ]
+}
+```
+

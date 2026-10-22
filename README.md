@@ -51,19 +51,29 @@ and restart Home Assistant. Requires the MQTT integration. The battery appears u
 
 ## Decoded protocol
 
-29-bit IDs, layout `0x18 | type | destination | source`. Master BMS `0xF5`, module slaves `0x80 + n`.
+Full byte-level description, open questions and observed BMS behaviour: **[docs/can-protocol.md](docs/can-protocol.md)**.
+
+29-bit IDs, layout `0x18 | type | destination | source`. Master BMS `0xF5`, module slaves `0x80 + n`,
+system unit `0xE8` → `0xF4`. With 10 modules the bus carries exactly 112 IDs:
 
 | ID | Direction | Period | Content | Confidence |
 |---|---|---|---|---|
-| `1811F5xx` | slave → master | 130 ms | byte 0 = first cell (1-based), then up to 3 cell voltages, mV, big endian | confirmed |
-| `1812F5xx` | slave → master | 790 ms | bytes 2–5 = 4 temperatures, raw − 40 = °C | very likely |
-| `1819F5xx` | slave → master | 790 ms | bytes 4–5 = module voltage, 0.1 V (matches cell sum) | confirmed |
-| `1810xxF5` | master → slave | 790 ms | bytes 2–3 = reference cell voltage, mV (equals pack average) | likely |
-| `1815F5xx` | slave → master | 790 ms | module status, always `0001000000000000` so far | raw |
-| `1840xxF5` | master → slave | 790 ms | balancing command, always `0100000000000000` so far | raw |
-| `1841F5xx` | slave → master | 790 ms | balancing state, all zero (no balancing) in every capture so far | `balancing` = non-zero |
-| `1816F5xx`, `183DF4E8` | | 260 ms | module version records (forwarded by `0xE8`) | likely |
-| `1833F4E8` | `0xE8` → `0xF4` | 160 ms | indexed system records `07`…`0C`: `07` byte 6 = SOC %; `08`, `0A` bytes 3–5 = counters stepping during discharge; `0C` = the same counters since BMS start; `09`, `0B` constant | SOC decoded, rest raw |
+| `1811F5xx` | slave → master | 130 ms | cell voltages, mV | confirmed |
+| `1812F5xx` | slave → master | 790 ms | 4 temperatures, raw − 40 = °C | likely |
+| `1819F5xx` | slave → master | 790 ms | module voltage, 0.1 V; byte 2 unknown | voltage confirmed |
+| `1816F5xx` | slave → master | 260 ms | module version records | likely |
+| `1814F5xx` | slave → master | 790 ms | always empty | raw |
+| `1815F5xx` | slave → master | 790 ms | status, always `0001000000000000` | raw |
+| `1841F5xx` | slave → master | 790 ms | balancing state, always zero so far | raw |
+| `1833F5xx` | slave → master | 3.4 s | empty reply to `1832` | likely |
+| `1810xxF5` | master → slave | 790 ms | reference cell voltage (= pack average), mV | likely |
+| `1832xxF5` | master → slave | 3.4 s | poll | raw |
+| `1840xxF5` | master → slave | 790 ms | balancing command, always `0100000000000000` | raw |
+| `1833F4E8` | `0xE8` → `0xF4` | 160 ms | system records `07`…`0C`: `07` byte 6 = SOC %, the rest are counters of unknown meaning | SOC confirmed |
+| `183DF4E8` | `0xE8` → `0xF4` | 26 ms | forwards the module version records | likely |
+
+Pack current is not on this bus. The bridge counts every ID it sees and publishes the list on
+`…/inventory`, so new or changing frames show up without a separate capture.
 
 ## Development
 
