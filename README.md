@@ -2,10 +2,13 @@
 
 Monitor every cell of an **EITAI ELEBOX-HV** high-voltage LiFePO4 battery in Home Assistant:
 160 cell voltages, 40 temperatures and per-module statistics for a 10-module system,
-so a weak module or cell is visible at a glance.
+so a weak module or cell is visible at a glance. It also exposes the BMS's lifetime and
+per-session charge/energy counters (Ah and kWh), per-module fault flags with the active
+fault names, and which cells are currently being balanced.
 
 > Unofficial project, not affiliated with EITAI. The CAN protocol was reverse engineered
-> from captures; fields that are not understood yet are exposed as raw diagnostic sensors.
+> from bus captures and from static analysis of the vendor's BMS PC tool (no vendor code
+> is included); fields that are not understood yet are exposed as raw diagnostic sensors.
 
 ## How it works
 
