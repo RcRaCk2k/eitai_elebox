@@ -11,7 +11,13 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfElectricPotential, UnitOfTemperature
+from homeassistant.const import (
+    PERCENTAGE,
+    EntityCategory,
+    UnitOfElectricPotential,
+    UnitOfEnergy,
+    UnitOfTemperature,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -49,6 +55,15 @@ def _location(prefix: str) -> Callable[[dict[str, Any]], str | None]:
     return fn
 
 
+def _counter(key: str, field: str, kwh: bool) -> EleboxSensorDescription:
+    # the BMS's own counters; "current" ones restart at 0 with every charge / discharge
+    return EleboxSensorDescription(
+        key=key, translation_key=key, device_class=SensorDeviceClass.ENERGY if kwh else None,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR if kwh else "Ah",
+        suggested_display_precision=2 if kwh else 1, value_fn=lambda d, f=field: d.get(f))
+
+
 def _raw(key: str, field: str) -> EleboxSensorDescription:
     return EleboxSensorDescription(
         key=key, translation_key=key, entity_category=EntityCategory.DIAGNOSTIC,
@@ -82,11 +97,8 @@ SYSTEM_SENSORS: tuple[EleboxSensorDescription, ...] = (
         for rec in ("07", "08", "09", "0a", "0b", "0c")
     ),
     *(
-        EleboxSensorDescription(
-            key=f"counter_{rec}", translation_key="counter", translation_placeholders={"record": rec},
-            entity_category=EntityCategory.DIAGNOSTIC, entity_registry_enabled_default=False,
-            value_fn=lambda d, r=rec: d.get(f"counter_{r}_raw"))
-        for rec in ("08", "0a")
+        _counter(f"{direction}_{unit}_{span}", f"{direction}_{unit}_{span}", unit == "kwh")
+        for span in ("total", "current") for direction in ("charge", "discharge") for unit in ("kwh", "ah")
     ),
 )
 
@@ -101,10 +113,14 @@ MODULE_SENSORS: tuple[EleboxSensorDescription, ...] = (
     EleboxSensorDescription(key="cell_min_index", translation_key="cell_min_index",
                             value_fn=lambda d: d.get("cell_min_index")),
     _temp("temp_max", "temp_max_c"),
-    _raw("status_raw", "status_raw"),
-    _raw("balance_state_raw", "balance_state_raw"),
+    _voltage("supply_voltage", V, "supply_voltage_v", 1, entity_category=EntityCategory.DIAGNOSTIC),
+    EleboxSensorDescription(key="balancing_cells", translation_key="balancing_cells",
+                            entity_category=EntityCategory.DIAGNOSTIC,
+                            value_fn=lambda d: None if d.get("balancing_cells") is None
+                            else ", ".join(map(str, d["balancing_cells"])) or "–"),
+    _raw("balance_raw", "balance_raw"),
+    _raw("fault_raw", "fault_raw"),
     _raw("balance_cmd_raw", "balance_cmd_raw"),
-    _raw("summary_byte2", "summary_byte2"),
     EleboxSensorDescription(key="firmware", translation_key="firmware", entity_category=EntityCategory.DIAGNOSTIC,
                             value_fn=lambda d: d.get("version")),
 )

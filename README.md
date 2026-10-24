@@ -60,16 +60,16 @@ system unit `0xE8` → `0xF4`. With 10 modules the bus carries exactly 112 IDs:
 |---|---|---|---|---|
 | `1811F5xx` | slave → master | 130 ms | cell voltages, mV | confirmed |
 | `1812F5xx` | slave → master | 790 ms | 4 temperatures, raw − 40 = °C | likely |
-| `1819F5xx` | slave → master | 790 ms | module voltage, 0.1 V; byte 2 unknown | voltage confirmed |
+| `1819F5xx` | slave → master | 790 ms | module voltage and module supply voltage, 0.1 V | voltage confirmed, supply vendor |
 | `1816F5xx` | slave → master | 260 ms | module version records | likely |
 | `1814F5xx` | slave → master | 790 ms | always empty | raw |
-| `1815F5xx` | slave → master | 790 ms | status, always `0001000000000000` | raw |
-| `1841F5xx` | slave → master | 790 ms | balancing state, always zero so far | raw |
+| `1815F5xx` | slave → master | 790 ms | passive balancing bitmap, one bit per cell; always zero so far | vendor |
+| `1841F5xx` | slave → master | 790 ms | module fault bits (supply, balancer, measurement chip, temperature wire); always zero so far | vendor |
 | `1833F5xx` | slave → master | 3.4 s | empty reply to `1832` | likely |
 | `1810xxF5` | master → slave | 790 ms | reference cell voltage (= pack average), mV | likely |
 | `1832xxF5` | master → slave | 3.4 s | poll | raw |
 | `1840xxF5` | master → slave | 790 ms | balancing command, always `0100000000000000` | raw |
-| `1833F4E8` | `0xE8` → `0xF4` | 160 ms | system records `07`…`0C`: `07` byte 6 = SOC %, the rest are counters of unknown meaning | SOC confirmed |
+| `1833F4E8` | `0xE8` → `0xF4` | 160 ms | system records `07`…`0C`: SOC %, total and current charged / discharged Ah and kWh | SOC confirmed, counters vendor |
 | `183DF4E8` | `0xE8` → `0xF4` | 26 ms | forwards the module version records | likely |
 
 Pack current is not on this bus. The bridge counts every ID it sees and publishes the list on

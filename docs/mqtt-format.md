@@ -1,4 +1,4 @@
-# MQTT format (schema 1)
+# MQTT format (schema 2)
 
 Any publisher can feed the Home Assistant integration: the Docker bridge in this repository,
 an ESP32 with a CAN transceiver, or anything else that reads the ELEBOX-HV bus **in listen-only mode**.
@@ -20,7 +20,7 @@ for `module_count` modules with `cells_per_module` cells and `temps_per_module` 
 
 ```json
 {
-  "schema": 1,
+  "schema": 2,
   "device_id": "elebox",
   "manufacturer": "EITAI",
   "model": "ELEBOX-HV",
@@ -52,8 +52,10 @@ Required: `schema`, `module_count`. Optional: everything else (defaults 16 cells
     "temp_min_c": 28, "temp_max_c": 33,
     "reference_cell_mv": 3309,
     "system_records_raw": {"07": "050003fdce1c", "...": "..."},
-    "counter_08_raw": 76470,
-    "counter_0a_raw": 369140
+    "charge_ah_total": 26237.4, "discharge_ah_total": 7664.8,
+    "charge_kwh_total": 13155.8, "discharge_kwh_total": 3699.8,
+    "charge_ah_current": 0.0, "charge_kwh_current": 0.0,
+    "discharge_ah_current": 2.7, "discharge_kwh_current": 1.3
   },
   "modules": [
     {
@@ -69,11 +71,14 @@ Required: `schema`, `module_count`. Optional: everything else (defaults 16 cells
       "deviation_from_pack_avg_mv": -0.1,
       "min_cell_below_pack_avg_mv": 2.2,
       "version": "118109 128909 139101",
-      "status_raw": "0001000000000000",
-      "balance_state_raw": "0000000000000000",
-      "balance_cmd_raw": "0100000000000000",
+      "supply_voltage_v": 24.0,
+      "balance_raw": "0001000000000000",
+      "balancing_cells": [],
       "balancing": false,
-      "summary_byte2": 240
+      "fault_raw": "0000000000000000",
+      "faults": [],
+      "fault": false,
+      "balance_cmd_raw": "0100000000000000"
     }
   ],
   "frames_total": 7548,
@@ -87,14 +92,22 @@ Required: `schema`, `module_count`. Optional: everything else (defaults 16 cells
   the derived values (min/max/avg/deviation) can be computed by the publisher or left out.
 * Units: voltages of cells in mV (integer), module/pack voltages in V, temperatures in °C.
 * `soc_pct` is the state of charge the BMS reports (last byte of system record `07`).
-* `balancing` is `true` when the module reports a non-zero balancing state (PF `0x41`). Only the all-zero
-  state has been observed so far, so the meaning of individual bits is not known yet.
+* `*_total` are the BMS's lifetime counters, `*_current` those of the current charge or discharge
+  (system records `07`…`0C`). Ah with 0.1 Ah, kWh with 0.01 kWh resolution.
+* `balancing_cells` lists the 1-based cells whose balancing resistor is on (PF `0x15`), `balancing` is
+  `true` if there is any.
+* `faults` lists the fault bits a module reports (PF `0x41`) by name, `fault` is `true` if there is any.
+  Names: see `SLAVE_FAULTS` in `lib/src/eitai_elebox/protocol.py` and [the protocol](can-protocol.md).
 * Fields ending in `_raw` are undecoded bus data and may change meaning in later schema versions.
 
 ## Versioning
 
 New optional fields may be added without changing `schema`. Removing or changing the meaning of a
 field increments `schema`; the integration warns when it sees a newer schema than it supports.
+
+Schema 2 (0.4.0): `balancing` now comes from PF `0x15` instead of PF `0x41`, which carries fault bits;
+`status_raw`, `balance_state_raw`, `summary_byte2`, `counter_08_raw` and `counter_0a_raw` were replaced by
+the decoded fields above.
 
 ## `inventory` (optional)
 
@@ -105,7 +118,7 @@ seconds (default 60). `known` is false for IDs not described in [can-protocol.md
 
 ```json
 {
-  "schema": 1,
+  "schema": 2,
   "since": 1792332790.1,
   "ids": [
     {"id": "1841F585", "known": true, "count": 4510, "period_ms": 790, "last_data": "0000000000000000",

@@ -9,4 +9,4 @@ MODEL = "ELEBOX-HV"
 SIGNAL_INFO = f"{DOMAIN}_info_{{}}"
 SIGNAL_STATE = f"{DOMAIN}_state_{{}}"
 SIGNAL_AVAILABILITY = f"{DOMAIN}_availability_{{}}"
-SUPPORTED_SCHEMA = 1  # MQTT payload format, see docs/mqtt-format.md
+SUPPORTED_SCHEMA = 2  # MQTT payload format, see docs/mqtt-format.md

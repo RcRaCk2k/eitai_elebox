@@ -22,9 +22,9 @@ import paho.mqtt.client as mqtt
 from eitai_elebox import BatteryState, __version__ as LIB_VERSION
 from .sources import ReplaySource, SocketCanSource, ZlgSource
 
-BRIDGE_VERSION = "0.3.0"
+BRIDGE_VERSION = "0.4.0"
 TOPIC_ROOT = "eitai_elebox"
-SCHEMA_VERSION = 1  # see docs/mqtt-format.md
+SCHEMA_VERSION = 2  # see docs/mqtt-format.md
 STALE_AFTER = 30
 
 _LOG = logging.getLogger("eitai_elebox_bridge")

@@ -45,24 +45,54 @@ class TestFrames(unittest.TestCase):
 
     def test_soc_and_counters(self):
         s = BatteryState()
-        s.update(Frame(0x1833F4E8, bytes.fromhex("07050003FDCE1C")))
-        s.update(Frame(0x1833F4E8, bytes.fromhex("080500012AC0")))
-        s.update(Frame(0x1833F4E8, bytes.fromhex("0A050005A21C")))
+        # live values of 23 Oct 2026
+        for rec in ("0705000400E651", "080500012B68", "09050014 12FC", "0A050005A53C", "0B0500000000", "0C05001B0082"):
+            s.update(Frame(0x1833F4E8, bytes.fromhex(rec.replace(" ", ""))))
         sysd = s.as_dict()["system"]
-        self.assertEqual(sysd["soc_pct"], 28)
-        self.assertEqual(sysd["counter_08_raw"], 0x012AC0)
-        self.assertEqual(sysd["counter_0a_raw"], 0x05A21C)
+        self.assertEqual(sysd["soc_pct"], 81)
+        self.assertEqual(sysd["charge_ah_total"], 26237.4)
+        self.assertEqual(sysd["discharge_ah_total"], 7664.8)
+        self.assertEqual(sysd["charge_kwh_total"], 13155.8)
+        self.assertEqual(sysd["discharge_kwh_total"], 3699.8)
+        self.assertEqual((sysd["charge_ah_current"], sysd["charge_kwh_current"]), (0, 0))
+        self.assertEqual((sysd["discharge_ah_current"], sysd["discharge_kwh_current"]), (2.7, 1.3))
+
+    def test_current_charge_record(self):
+        s = BatteryState()
+        s.update(Frame(0x1833F4E8, bytes.fromhex("0B0500140064")))  # seen once in a capture
+        sysd = s.as_dict()["system"]
+        self.assertEqual((sysd["charge_ah_current"], sysd["charge_kwh_current"]), (2.0, 1.0))
 
     def test_balancing(self):
         s = BatteryState()
-        s.update(Frame(0x1841F585, bytes.fromhex("0000000000000000")))
+        s.update(Frame(0x1815F585, bytes.fromhex("0001000000000000")))
         s.update(Frame(0x184085F5, bytes.fromhex("0100000000000000")))
         m = s.modules[5].as_dict()
         self.assertIs(m["balancing"], False)
+        self.assertEqual(m["balancing_cells"], [])
         self.assertEqual(m["balance_cmd_raw"], "0100000000000000")
-        s.update(Frame(0x1841F585, bytes.fromhex("0040000000000000")))
+        s.update(Frame(0x1815F585, bytes.fromhex("0001804100000000")))
+        self.assertEqual(s.modules[5].as_dict()["balancing_cells"], [1, 7, 16])
         self.assertIs(s.modules[5].as_dict()["balancing"], True)
+        s.update(Frame(0x1815F585, bytes.fromhex("01FFFFFF00000000")))  # other record: ignored
+        self.assertEqual(s.modules[5].as_dict()["balancing_cells"], [1, 7, 16])
         self.assertIsNone(s.modules.get(0))
+
+    def test_faults(self):
+        s = BatteryState()
+        s.update(Frame(0x1841F585, bytes.fromhex("0000000000000000")))
+        m = s.modules[5].as_dict()
+        self.assertIs(m["fault"], False)
+        self.assertEqual(m["faults"], [])
+        s.update(Frame(0x1841F585, bytes.fromhex("0110101002000000")))
+        self.assertEqual(s.modules[5].as_dict()["faults"],
+                         ["supply_undervoltage", "balancer_detection_1", "measurement_chip_1", "passive_balancing",
+                          "temp_wire"])
+
+    def test_supply_voltage(self):
+        s = BatteryState()
+        s.update(Frame(0x1819F585, bytes.fromhex("0100EE000210")))
+        self.assertEqual(s.modules[5].supply_voltage_v, 23.8)
 
     def test_inventory_flags_unknown_ids(self):
         s = BatteryState()
@@ -99,8 +129,9 @@ class TestCapture(unittest.TestCase):
     def test_soc_from_capture(self):
         self.assertEqual(self.d["system"]["soc_pct"], 28)
 
-    def test_no_module_balancing_in_capture(self):
+    def test_no_module_balancing_or_fault_in_capture(self):
         self.assertEqual([m["balancing"] for m in self.d["modules"]], [False] * 10)
+        self.assertEqual([m["fault"] for m in self.d["modules"]], [False] * 10)
 
     def test_module_voltage_matches_cell_sum(self):
         for m in self.d["modules"]:
@@ -110,9 +141,9 @@ class TestCapture(unittest.TestCase):
         inv = load("capture_idle.log").inventory()
         self.assertEqual(len(inv), 112)  # 11 message types x 10 modules + 2 system IDs
         self.assertEqual([i["id"] for i in inv if not i["known"]], [])
-        bal = next(i for i in inv if i["id"] == "1841F585")
-        self.assertEqual(bal["payloads"], {"0000000000000000": bal["count"]})
-        self.assertAlmostEqual(bal["period_ms"], 790, delta=40)
+        faults = next(i for i in inv if i["id"] == "1841F585")
+        self.assertEqual(faults["payloads"], {"0000000000000000": faults["count"]})
+        self.assertAlmostEqual(faults["period_ms"], 790, delta=40)
 
     def test_system_records_present(self):
         self.assertEqual(sorted(self.d["system"]["system_records_raw"]), ["07", "08", "09", "0a", "0b", "0c"])

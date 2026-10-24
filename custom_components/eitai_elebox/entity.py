@@ -89,6 +89,9 @@ class EleboxEntity(Entity):
         src = self._source()
         return self.entity_description.value_fn(src) if src is not None else None
 
+    def _snapshot(self) -> tuple:
+        return (self.available, self._value())
+
     @property
     def available(self) -> bool:
         return self._data.available and self._source() is not None
@@ -96,13 +99,13 @@ class EleboxEntity(Entity):
     @callback
     def _handle_update(self) -> None:
         # ~230 entities get a snapshot every few seconds: only write real changes to keep the recorder small
-        current = (self.available, self._value())
+        current = self._snapshot()
         if current != self._last_written:
             self._last_written = current
             self.async_write_ha_state()
 
     async def async_added_to_hass(self) -> None:
-        self._last_written: tuple[bool, Any] | None = None
+        self._last_written: tuple | None = None
         for signal in (SIGNAL_STATE, SIGNAL_AVAILABILITY):
             self.async_on_remove(async_dispatcher_connect(
                 self.hass, signal.format(self._data.device_id), self._handle_update))

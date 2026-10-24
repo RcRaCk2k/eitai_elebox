@@ -1,15 +1,21 @@
 # ELEBOX-HV internal CAN protocol (reverse engineered)
 
-There is no vendor documentation. Everything here was derived from listen-only captures of one
+There is no public vendor documentation. Everything here was derived from listen-only captures of one
 ELEBOX-HV with 10 modules × 16 LiFePO4 cells (firmware records `118109 128909 139101`) on a
 Growatt SPH 10000TL3 BH-UP, compared with the inverter's battery data over several charge/discharge cycles.
+Since 0.4.0 it also uses how the BMS maker's Windows service tool (EVBMSSoft 2.60, supplied by EITAI support for
+diagnostics) interprets the frames: its receive routine was examined statically, nothing of it is included here.
 Each field carries a confidence level:
 
 | Level | Meaning |
 |---|---|
 | **confirmed** | checked against an independent measurement |
+| **vendor** | meaning and scaling as the vendor tool decodes it; consistent with our captures |
 | **likely** | consistent over all captures, plausible, not independently checked |
 | **raw** | seen, meaning unknown; published raw so others can help |
+
+In the vendor tool's terms the master is an *EVBCM*, a module slave an *EVBMM*; the PC tool uses address `0xF4`
+and expects the master at `0xE8` in energy-storage systems.
 
 > ⚠️ **Listen-only.** The bus is the BMS's internal link. Open the adapter in listen-only mode and never send.
 > An active node acknowledges frames and can disturb the master-slave timing.
@@ -18,8 +24,9 @@ Each field carries a confidence level:
 
 - 250 kbit/s, 29-bit extended IDs only (the decoder ignores standard frames).
 - J1939-like layout `0x18 | PF | destination | source`.
-- Addresses: master BMS `0xF5`, module slaves `0x80 + n` (module 1 = `0x80`), system unit `0xE8`
-  sending to `0xF4`. Which physical module in the stack has which address is not known yet.
+- Addresses: master BMS `0xF5` towards the modules, module slaves `0x80 + n` (module 1 = `0x80`, vendor),
+  and the master again as `0xE8` sending system records to `0xF4`, the PC tool's address (vendor).
+  Which physical module in the stack has which address is not known yet.
 - With 10 modules exactly **112 IDs** are on the bus: 11 message types per module plus 2 system IDs.
   Full captures so far were taken at rest; during charge and discharge only the decoded values were logged.
   Since bridge 0.3.0 every ID is counted continuously: the bridge publishes everything it sees on `eitai_elebox/<device_id>/inventory`
@@ -32,15 +39,15 @@ Each field carries a confidence level:
 | `1811F5xx` | slave → master | 130 ms | 8 / 4 | cell voltages | confirmed |
 | `1812F5xx` | slave → master | 790 ms | 6 | 4 temperatures | likely |
 | `1814F5xx` | slave → master | 790 ms | 0 | always empty (alarms?) | raw |
-| `1815F5xx` | slave → master | 790 ms | 8 | status, constant | raw |
+| `1815F5xx` | slave → master | 790 ms | 8 | passive balancing per cell | vendor |
 | `1816F5xx` | slave → master | 260 ms | 6 | 3 rotating version records | likely |
-| `1819F5xx` | slave → master | 790 ms | 6 | module voltage + one unknown byte | voltage confirmed |
+| `1819F5xx` | slave → master | 790 ms | 6 | supply voltage, module voltage | voltage confirmed, rest vendor |
 | `1833F5xx` | slave → master | 3.4 s | 0 | empty reply to `1832` | likely |
-| `1841F5xx` | slave → master | 790 ms | 8 | balancing state, always zero | raw |
+| `1841F5xx` | slave → master | 790 ms | 8 | module fault bits, always zero | vendor |
 | `1810xxF5` | master → slave | 790 ms | 8 | reference cell voltage | likely |
 | `1832xxF5` | master → slave | 3.4 s | 8 | poll / keep-alive | raw |
 | `1840xxF5` | master → slave | 790 ms | 8 | balancing command, constant | raw |
-| `1833F4E8` | `0xE8` → `0xF4` | 160 ms | 6 / 7 | indexed system records `07`…`0C` | `07` SOC confirmed, rest raw |
+| `1833F4E8` | `0xE8` → `0xF4` | 160 ms | 6 / 7 | SOC, charge/discharge Ah and kWh counters | SOC confirmed, counters vendor |
 | `183DF4E8` | `0xE8` → `0xF4` | 26 ms | 8 | forwards the module version records | likely |
 
 `xx` = slave address `0x80`…`0x89`. Byte numbers below are 0-based, multi-byte values big endian.
@@ -69,9 +76,19 @@ Six frames cover the 16 cells; the frame for cell 16 has DLC 4. The sum of the 1
 
 Always DLC 0. Name `PF_SLAVE_ALARMS` is a guess (an alarm frame that carries data only when something is wrong).
 
-### `1815` status — raw
+### `1815` balancing state — vendor
 
-Always `00 01 00 00 00 00 00 00` on every module.
+| Byte | Content |
+|---|---|
+| 0 | record, `00` |
+| 1 | `01` (low nibble is a sub-record for other module types) |
+| 2–3 | passive balancing bitmap, uint16: bit 0 = cell 1 … bit 15 = cell 16, 1 = balancing resistor on |
+| 4–7 | `00` |
+
+That is how the vendor tool decodes record `00` for passive 16-cell modules (EVBMM-1612). Record `01` is used by
+actively balancing module types and was never seen here. On this battery the frame was
+`00 01 00 00 00 00 00 00` on every module in every capture and live sample, including the end of charge with the
+highest cell at 3476 mV and a cell spread of > 100 mV: **no cell was balanced**.
 
 ### `1816` version records — likely
 
@@ -88,20 +105,35 @@ The integration shows bytes 1–3 of the three records as the module version, e.
 
 | Byte | Content | Confidence |
 |---|---|---|
-| 0–1 | `01 00` | raw |
-| 2 | 235…241, differs slightly between modules and over time (published as `summary_byte2`) | raw |
-| 3 | `00` | raw |
+| 0 | record, `01` | vendor |
+| 1–2 | module supply voltage, 0.1 V; seen 23.5…24.1 V (`supply_voltage_v`) | vendor |
+| 3 | a temperature, raw − 40 = °C; always `00` here, so probably not fitted | vendor |
 | 4–5 | module voltage, 0.1 V (matches the sum of `1811`) | confirmed |
 
 ### `1833F5xx` — likely
 
 DLC 0, sent by every slave right after the master's `1832` poll.
 
-### `1841` balancing state — raw
+### `1841` fault bits — vendor
 
-Always `00…00` on every module in every capture, including the end of charge with the highest cell at
-3476 mV and a cell spread of > 100 mV. The integration reports non-zero as `balancing` = on; that
-mapping is an assumption until a non-zero frame is seen.
+Bit *n* = byte *n* / 8, bit *n* % 8 for bits 0–23; bit 24 = byte 3 bit 4; bits 25–26 = byte 4 bits 0–1
+(the vendor tool evaluates the last two only for some projects).
+
+| Bit | Fault |
+|---|---|
+| 0 / 1 | module supply under- / overvoltage |
+| 2 / 3 | balancer supply under- / overvoltage |
+| 4 / 5 | balancer board / balancer board supply |
+| 6 / 7 | balancing detection / balancing direction |
+| 8–11 | balancer board 1–4 |
+| 12–15 | balancing detection 1–4 |
+| 16–19 | balancing direction 1–4 |
+| 20–23 | measurement chip 1–4 |
+| 24 | passive balancing fault |
+| 25 / 26 | temperature wire shorted to ground or open / shorted or open |
+
+Always `00…00` on every module in every capture: no module, including module 6, reports a fault.
+Up to 0.3.0 this frame was wrongly published as the balancing state.
 
 ## Master → slave
 
@@ -125,21 +157,27 @@ Always `01 00 00 00 00 00 00 00` in every capture and live sample checked so far
 
 ## System unit `0xE8` → `0xF4`
 
-### `1833F4E8` system records
+### `1833F4E8` system records — vendor
 
-Byte 0 = record index, bytes 1–2 = `05 00` in every record. The records cycle every ~160 ms.
+Byte 0 = record index, byte 1 = `05` (record type: pack data; other types carry per-cell values and were not
+seen here). Values are big endian. The records cycle every ~160 ms.
+The vendor tool reads the index as 6 × pack + field, so `07`…`0C` are fields 1…6 of pack 1.
 
-| Record | DLC | Bytes 3… | Observations | Confidence |
-|---|---|---|---|---|
-| `07` | 7 | 3–5: 24-bit value, 6: **SOC %** | SOC equals the SOC the inverter reports. Bytes 3–5 stayed constant over a whole day and night (`03 FD CE` on 18 Oct) but had changed four days later (`03 FF FC`). | SOC confirmed, 3–5 raw |
-| `08` | 6 | 3–5: 24-bit counter | steps by 1, only while discharging, faster at high power | raw |
-| `09` | 6 | 3–5: 24-bit counter | constant during a discharge-only night, rose on days with charging (+2830 while the inverter counted 44.5 kWh charged) | raw |
-| `0A` | 6 | 3–5: 24-bit counter | steps by 10, only while discharging | raw |
-| `0B` | 6 | 3–5 | `00 00 00` most of the time, `14 00 64` in one capture | raw |
-| `0C` | 6 | 3: like `08`, 4–5: like `0A` | both start at zero when the BMS starts | raw |
+| Record | DLC | Content | Confidence |
+|---|---|---|---|
+| `07` | 7 | bytes 2–5: total charged capacity, 0.1 Ah; byte 6: **SOC %** | SOC confirmed, Ah vendor |
+| `08` | 6 | bytes 2–5: total discharged capacity, 0.1 Ah | vendor |
+| `09` | 6 | bytes 2–5: total charged energy, 0.01 kWh | vendor |
+| `0A` | 6 | bytes 2–5: total discharged energy, 0.01 kWh | vendor |
+| `0B` | 6 | bytes 2–3: capacity of the current charge, 0.1 Ah; bytes 4–5: its energy, 0.01 kWh | vendor |
+| `0C` | 6 | bytes 2–3: capacity of the current discharge, 0.1 Ah; bytes 4–5: its energy, 0.01 kWh | vendor |
 
-The ratios of `08`, `09`, `0A` to the inverter's kWh counters are not constant, so they are probably not
-plain energy or charge counters.
+Consistent with the captures: `08` steps by 1 (0.1 Ah) and `0A` by 10 (0.1 kWh) only while discharging,
+`09` rises only on days with charging; `0B` = `00 14 00 64` = 2.0 Ah / 1.00 kWh and `0C` = `00 1B 00 82` =
+2.7 Ah / 1.30 kWh, both matching the pack voltage of ≈ 520 V. The BMS counts less than the inverter
+(e.g. +28.3 kWh charged while the inverter counted 44.5 kWh), and its discharge totals are far below its charge
+totals (13 156 / 3 700 kWh on 23 Oct 2026). It probably misses small currents (see below); whether the
+discharge counters were reset at some point is unknown.
 
 ### `183DF4E8` version forward — likely
 
@@ -164,14 +202,15 @@ not part of the frame format.
 | charging ends at that point, average cell voltage | ≈ 3395–3415 mV under charge, ≈ 3330 mV at rest | 2 charges |
 | currents below ≈ 0.8 A seem not to be counted | SOC stays at 0 % for hours at 0.55 A charge, jumps to 12–20 % once the current exceeds ≈ 0.8 A | 2 mornings |
 | SOC is also corrected gradually | e.g. −18 % within 50 min while ≈ 1.5 % was discharged | 1 night |
-| no balancing reported | `1841` zero (4 days of live data), `1840` unchanged (all captures and live samples) | since 18 Oct |
+| no balancing | `1815` balancing bitmap zero, `1840` unchanged (all captures and live samples) | since 18 Oct |
+| no module faults | `1841` zero (4 days of live data) | since 18 Oct |
 
 ## Open questions
 
-- Meaning of `1810` bytes 4–5, `1819` byte 2, `1815`, `1832`, records `07` bytes 3–5, `08`…`0C`.
-- What `1840` / `1841` look like when the BMS balances, and at which cell voltage it starts.
+- Meaning of `1810` bytes 4–5, `1832` and `1840` (what the master sends to the modules).
+- At which cell voltage or spread the BMS starts balancing, and whether it ever does on this firmware.
 - Mapping of slave addresses to physical module positions.
-- Contents of `1814` when an alarm is active.
+- Contents of `1814` (not evaluated by the vendor tool either).
 
 Captures under other conditions (alarm, balancing, other firmware, other module counts) are very welcome:
 open an issue with the `inventory` JSON or a `candump -L` log.

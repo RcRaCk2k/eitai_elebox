@@ -67,15 +67,6 @@
       "cell_min_index": {
         "name": "Lowest cell number"
       },
-      "status_raw": {
-        "name": "Status (raw)"
-      },
-      "balance_state_raw": {
-        "name": "Balancing state (raw)"
-      },
-      "summary_byte2": {
-        "name": "Summary byte 2 (raw)"
-      },
       "firmware": {
         "name": "Firmware"
       },
@@ -91,16 +82,52 @@
       "cell_min_below_avg": {
         "name": "Lowest cell below average"
       },
-      "counter": {
-        "name": "Counter {record} (raw)"
-      },
       "balance_cmd_raw": {
         "name": "Balancing command (raw)"
+      },
+      "supply_voltage": {
+        "name": "Supply voltage"
+      },
+      "balancing_cells": {
+        "name": "Balancing cells"
+      },
+      "balance_raw": {
+        "name": "Balancing state (raw)"
+      },
+      "fault_raw": {
+        "name": "Faults (raw)"
+      },
+      "charge_kwh_total": {
+        "name": "Charged energy total"
+      },
+      "discharge_kwh_total": {
+        "name": "Discharged energy total"
+      },
+      "charge_ah_total": {
+        "name": "Charged capacity total"
+      },
+      "discharge_ah_total": {
+        "name": "Discharged capacity total"
+      },
+      "charge_kwh_current": {
+        "name": "Charged energy (current charge)"
+      },
+      "discharge_kwh_current": {
+        "name": "Discharged energy (current discharge)"
+      },
+      "charge_ah_current": {
+        "name": "Charged capacity (current charge)"
+      },
+      "discharge_ah_current": {
+        "name": "Discharged capacity (current discharge)"
       }
     },
     "binary_sensor": {
       "balancing": {
         "name": "Balancing"
+      },
+      "fault": {
+        "name": "Fault"
       }
     }
   }

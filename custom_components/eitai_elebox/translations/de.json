@@ -67,15 +67,6 @@
       "cell_min_index": {
         "name": "Nummer der niedrigsten Zelle"
       },
-      "status_raw": {
-        "name": "Status (roh)"
-      },
-      "balance_state_raw": {
-        "name": "Balancing-Status (roh)"
-      },
-      "summary_byte2": {
-        "name": "Summary-Byte 2 (roh)"
-      },
       "firmware": {
         "name": "Firmware"
       },
@@ -91,16 +82,52 @@
       "cell_min_below_avg": {
         "name": "Schwächste Zelle unter Mittelwert"
       },
-      "counter": {
-        "name": "Zähler {record} (roh)"
-      },
       "balance_cmd_raw": {
         "name": "Balancing-Befehl (roh)"
+      },
+      "supply_voltage": {
+        "name": "Versorgungsspannung"
+      },
+      "balancing_cells": {
+        "name": "Zellen im Balancing"
+      },
+      "balance_raw": {
+        "name": "Balancing-Status (roh)"
+      },
+      "fault_raw": {
+        "name": "Fehler (roh)"
+      },
+      "charge_kwh_total": {
+        "name": "Geladene Energie gesamt"
+      },
+      "discharge_kwh_total": {
+        "name": "Entladene Energie gesamt"
+      },
+      "charge_ah_total": {
+        "name": "Geladene Ladung gesamt"
+      },
+      "discharge_ah_total": {
+        "name": "Entladene Ladung gesamt"
+      },
+      "charge_kwh_current": {
+        "name": "Geladene Energie (aktuelle Ladung)"
+      },
+      "discharge_kwh_current": {
+        "name": "Entladene Energie (aktuelle Entladung)"
+      },
+      "charge_ah_current": {
+        "name": "Geladene Ladung (aktuelle Ladung)"
+      },
+      "discharge_ah_current": {
+        "name": "Entladene Ladung (aktuelle Entladung)"
       }
     },
     "binary_sensor": {
       "balancing": {
         "name": "Balancing"
+      },
+      "fault": {
+        "name": "Fehler"
       }
     }
   }

@@ -13,9 +13,11 @@ class ModuleState:
     cells_mv: list[int | None] = field(default_factory=lambda: [None] * p.CELLS_PER_MODULE)
     temps_c: list[int | None] = field(default_factory=lambda: [None] * p.TEMPS_PER_MODULE)
     voltage_v: float | None = None
-    status_raw: str | None = None
-    summary_byte2: int | None = None
-    balance_state_raw: str | None = None
+    supply_voltage_v: float | None = None
+    balance_raw: str | None = None
+    balancing_cells: list[int] | None = None
+    fault_raw: str | None = None
+    faults: list[str] | None = None
     balance_cmd_raw: str | None = None
     version_records: dict[int, str] = field(default_factory=dict)
     last_seen: float = 0.0
@@ -38,12 +40,14 @@ class ModuleState:
             "cell_avg_mv": round(sum(cells) / len(cells), 1) if cells else None,
             "cell_delta_mv": max(cells) - min(cells) if cells else None,
             "temp_max_c": max((t for t in self.temps_c if t is not None), default=None),
-            "status_raw": self.status_raw,
-            "summary_byte2": self.summary_byte2,
-            "balance_state_raw": self.balance_state_raw,
+            "supply_voltage_v": self.supply_voltage_v,
+            "balance_raw": self.balance_raw,
+            "balancing_cells": self.balancing_cells,
+            "balancing": bool(self.balancing_cells) if self.balancing_cells is not None else None,
+            "fault_raw": self.fault_raw,
+            "faults": self.faults,
+            "fault": bool(self.faults) if self.faults is not None else None,
             "balance_cmd_raw": self.balance_cmd_raw,
-            # PF 0x41 was all zero in every capture so far; non-zero is assumed to mean "balancing"
-            "balancing": any(bytes.fromhex(self.balance_state_raw)) if self.balance_state_raw else None,
             "version": " ".join(self.version_records[k] for k in sorted(self.version_records)) or None,
             "last_seen": self.last_seen,
         }
@@ -99,8 +103,8 @@ class BatteryState:
         d = f.data
         self.ids.setdefault(f.can_id, IdStats()).add(d.hex(), self.last_frame)
 
-        # system unit 0xE8 -> 0xF4
-        if f.src == 0xE8 and f.dest == 0xF4:
+        # master's system records 0xE8 -> 0xF4
+        if f.src == p.SYSTEM_ADDR and f.dest == p.SYSTEM_DEST:
             if f.pf == p.PF_SYSTEM_RECORD and len(d) >= 3:
                 self.system_records[d[0]] = d[1:].hex()
             return
@@ -133,11 +137,15 @@ class BatteryState:
             m.temps_c = [x - p.TEMP_OFFSET for x in d[2:2 + p.TEMPS_PER_MODULE]]
         elif f.pf == p.PF_MODULE_SUMMARY and len(d) >= 6:
             m.voltage_v = int.from_bytes(d[4:6], "big") / 10
-            m.summary_byte2 = d[2]
-        elif f.pf == p.PF_SLAVE_STATUS:
-            m.status_raw = d.hex()
+            m.supply_voltage_v = int.from_bytes(d[1:3], "big") / 10
         elif f.pf == p.PF_SLAVE_BALANCE_STATE:
-            m.balance_state_raw = d.hex()
+            cells = p.balancing_cells(d)
+            if cells is not None:
+                m.balance_raw = d.hex()
+                m.balancing_cells = cells
+        elif f.pf == p.PF_SLAVE_FAULTS:
+            m.fault_raw = d.hex()
+            m.faults = p.slave_faults(d)
         elif f.pf == p.PF_SLAVE_VERSION and len(d) >= 4:
             m.version_records[d[1]] = d[1:4].hex()
 
@@ -146,10 +154,15 @@ class BatteryState:
         rec = self.system_records
         if len(rec.get(p.REC_STATUS, "")) >= 12:
             out["soc_pct"] = bytes.fromhex(rec[p.REC_STATUS])[5]
-        # monotonic counters, meaning unknown: they step during discharge, record 0x0C holds the same since BMS start
-        for k in p.REC_COUNTERS:
+        # stored without the index byte: [05, value...]
+        for k, (name, scale) in p.REC_TOTALS.items():
             if len(rec.get(k, "")) >= 10:
-                out[f"counter_{k:02x}_raw"] = int.from_bytes(bytes.fromhex(rec[k])[2:5], "big")
+                out[name] = round(int.from_bytes(bytes.fromhex(rec[k])[1:5], "big") * scale, 2)
+        for k, name in p.REC_CURRENT.items():
+            if len(rec.get(k, "")) >= 10:
+                v = bytes.fromhex(rec[k])
+                out[f"{name}_ah_current"] = round(int.from_bytes(v[1:3], "big") * 0.1, 1)
+                out[f"{name}_kwh_current"] = round(int.from_bytes(v[3:5], "big") * 0.01, 2)
         return out
 
     def inventory(self) -> list[dict]:
